@@ -1,22 +1,28 @@
 #!/bin/bash
 
-MY_VERSION="1.6.7"
-PATH=${PATH}:/sbin:/usr/sbin
-
 # system_info.sh
-# Written by:     Ken Cormack, unixken@yahoo.com
-# Contributions:  William Stearns, william.l.stearns@gmail.com
-# github:         https://github.com/kencormack/system_info"
+# Written by:   Ken Cormack, unixken@yahoo.com
+# Copyright (c) 2020, Ken Cormack
+# github:       https://github.com/kencormack/system_info
+# license:      GPL 3.0
+# Contributor:  William Stearns, william.l.stearns@gmail.com
 #
 # This script attempts to perform a fairly complete audit of the current
 # configuration of a Raspberry Pi.  The target hardware is any variant or
 # model of Pi, up to and including the Pi 4B in all it's available memory
-# configurations (1/2/4GB).  Supported OS versions include Raspbian Stretch
-# (including the newly renamed "Raspberry Pi OS", in 64-bit and 32-bit),
-# and Buster.  No attempts will be made to back-port this to Jessie or older.
+# configurations (1-8GB).  Supported OS versions include Raspbian Stretch
+# and Buster (including the newly renamed "Raspberry Pi OS", in 32-bit and
+# 64-bit).  Expect things to not work on the 64-bit OS, while it is still
+# beta.  No attempts will be made to back-port this to Jessie or older.
 #
 # The script is an "examination only" affair, making no attempts to add,
 # delete, or change anything on the system.
+#
+# This script does not attempt to configure things for you, nor does it
+# make any recommendations on config changes that should be made.  It ONLY
+# reports what you currently have going on, with your system.  It is entirely
+# YOUR responsibility to do the research needed, to properly set up your
+# system.
 #
 # The intended audience for this script is any Pi user who wants to see how
 # aspects of their Pi are currently equipped and configured, for general
@@ -29,10 +35,10 @@ PATH=${PATH}:/sbin:/usr/sbin
 # 'sudo' access is required.  The script can be run as the user, and will
 # call sudo only for those commands that need root privilege.
 #
-# The following packages are required, to do a full inspection:
-#   alsa-utils, bc, bluez, coreutils, i2c-tools, iproute2, libraspberrypi-bin,
-#   lshw, net-tools, procps, rpi-eeprom, usbutils, sed, util-linux, v4l-utils,
-#   wireless-tools
+# The following packages are required, to do a basic inspection:
+#   alsa-utils, bc, bluez, coreutils, cron, i2c-tools, initramfs-tools, iproute2,
+#   util-linux, v4l-utils, libraspberrypi-bin, lshw, net-tools, procps, rpi-eeprom,
+#   usbutils, sed, wireless-tools
 #
 # If the Pi being examined is a 4B, the package rpi-eeprom is also required.
 #
@@ -40,52 +46,43 @@ PATH=${PATH}:/sbin:/usr/sbin
 # If any are missing, it will inform the user, and instruct them to install.
 #
 # The following supplemental packages may also be utilized:
-#   cups-client, dc, docker-ce-cli, ethtool, hdparm, lirc, lvm2, m4, mdadm,
-#   nfs-kernel-server, nmap, perl-base, pigpiod, python3-gpiozero, quota, rng-tools,
-#   rpcbind, rtl-sdr, samba, smartmontools, sysbench, sysstat, systemd-container,
-#   systemd-coredump, watchdog, wiringpi, x11-xserver-utils
+#   at, chkrootkit, clamav, cups-client, dc, docker-ce-cli, ethtool, hdparm, lirc,
+#   lm-sensors, lvm2 m4, mdadm, nfs-kernel-server, nmap, perl-base, pigpiod,
+#   python3-gpiozero, quota, rng-tools, rpcbind, rtl-sdr, samba, smartmontools,
+#   sysbench, sysstat, systemd-container, systemd-coredump, watchdog, wiringpi,
+#   x11-xserver-utils
 #
 # NOTE:
 # If you have a raspberry pi 4B (1/2/4GB only), install version 2.52 of wiringpi
 # See - http://wiringpi.com/wiringpi-updated-to-2-52-for-the-raspberry-pi-4b/
+# As WiringPi is now deprecated, this script will NOT support WiringPi on the
+# Pi 4B 8GB model.
 #
-# Those packages are not required, and the user will not be instructed
-# to install them.  But they will be utilized if installed and configured.
-# Sections of the output made possible by the supplemental packages will be
-# marked with (***) in the heading of any sections involved, or in the part
-# of an otherwise core test that has made use of the supplemental package.
+# The supplemental packages are not required, and the user will not be
+# instructed to install them.  But they will be utilized if installed and
+# configured.  Sections of the output made possible by the supplemental packages
+# will bee marked with (***) in the heading of any sections involved, or in the
+# part of an otherwise core test that has made use of the supplemental package.
 #
-# This script was tested on the following hardware:
-#   hostname: pi-media (Ken's),
-#   Pi 3B+ w/ Raspbian Stretch,
-#   X150 9-port USB hub,
-#   DVK512 board w/ RTC,
-#   DockerPi Powerboard,
-#   fit_StatUSB USB LED,
-#   USB-attached 128GB SATA III SSD drive,
-#   USB-attached 4TB Seagate hard drive,
-#   HDMI Sony Flatscreen TV
-#
-#   hostname: pi-dev (Ken's),
-#   Pi 4B (2G memory) w/ Raspbian Buster,
-#   X150 9-port USB hub,
-#   DVK512 board w/ RTC,
-#   DockerPi Powerboard,
-#   fit_StatUSB USB LED,
-#   USB Bluetooth dongle (onboard BT disabled),
-#   Hauppauge WinTV HVR950Q USB TV Tuner,
-#   RTL-SDR USB Software Defined Radio,
-#   X820 SATA III Board w/ 1TB SSD,
-#   4K HDMI Display Emulator Dummy Plug (2 Ea.),
-#   Headless - SSH and VNC only (No Display)
-#
-#   hostname: pi-devel-2GB (William's),
-#   Pi 4B (2GB memory) w/ Raspbian Buster,
-#   PiOled i2c display,
-#   USB flash drive,
-#   USB Ethernet adapter
+# See the README.md for further information.
 
 ##################################################
+
+MY_VERSION="1.9.0"
+MY_PARAM=${1}
+PATH=${PATH}:/sbin:/usr/sbin
+LC_ALL=C
+LANG=C
+if [ "${TERM}" = "" ] || [ "${TERM}" = "dumb" ]
+then
+  REV=""
+  SGR0=""
+  BELL=""
+else
+  REV="$(tput rev 2>/dev/null)"
+  SGR0="$(tput sgr0 2>/dev/null)"
+  BELL="$(tput bel 2>/dev/null)"
+fi
 
 #---------------
 # Right off the bat...
@@ -94,7 +91,8 @@ PATH=${PATH}:/sbin:/usr/sbin
 #
 if [ "${BASH_VERSION}" = "" ]
 then
-  printf '\a'
+# printf '\a'
+  echo "${BELL}"
   clear
   echo "################################################################"
   echo
@@ -117,12 +115,17 @@ then
   exit
 fi
 
+##################################################
+# EVERYTHING GETS DEFINED IN FUNCTIONS/SUBROUTINES.
+# THOSE WILL THEN BE GROUPED TOGETHER INTO OTHER
+# FUNCTIONS THAT ARE CALLED BASED ON MENU SELECTIONS.
+##################################################
 #---------------
 fnABORT()
 {
   echo
+  echo "ABORT${BELL}"
   rm /tmp/.lshw_businfo.${PPID} 2>/dev/null
-  echo "ABORT"
   exit
 }
 
@@ -136,7 +139,7 @@ fnTITLE()
   echo "\__ \ |_| \__ \ ||  __/ | | | | | | | | | |  _| (_) |"
   echo "|___/\__, |___/\__\___|_| |_| |_| |_|_| |_|_|  \___/"
   echo "     |___/"
-  echo "            RASPBERRY PI SYSTEM INFORMATION REPORT"
+  echo "           RASPBERRY PI SYSTEM INFORMATION REPORT"
   echo
 }
 
@@ -158,27 +161,86 @@ fnSUB_BANNER()
 }
 
 #---------------
+# Inspect the mode (permissions - in octal), owner, and group of a specified directory or file.
+# Called by passing 4 parameters to the function as follows:
+# fnMOG octal_mode owner group directory
+fnMOG()
+{
+  OCTAL="${1}"      # recommended perms, eg: 755 (rwxr-xr-x)
+  OWNER="${2}"      # recommended owner
+  GROUP="${3}"      # recommended group
+  CHECKPATH="${4}"  # path to check
+	
+  if [ -e "${CHECKPATH}" ]
+  then
+    # Run commands
+    COCTAL="$(${SUDO} stat -L -c %a "${CHECKPATH}")"
+    SYMBOLIC="$(${SUDO} stat -L -c %A "${CHECKPATH}")"
+    COWNER="$(${SUDO} stat -L -c %U "${CHECKPATH}")"
+    CGROUP="$(${SUDO} stat -L -c %G "${CHECKPATH}")"
+    # Compare
+    echo "[${CHECKPATH}]"
+    if [ "${COCTAL}" != "${OCTAL}" ]
+    then
+      echo "  Permissions ... WARN [${COCTAL}] (${SYMBOLIC}) - Recommend [${OCTAL}])"
+    else
+      echo  "  Permissions ... OK [${OCTAL}] (${SYMBOLIC})"
+    fi
+    if [ "${COWNER}" != "${OWNER}" ]
+    then
+      echo "  Owner ......... WARN [${COWNER}] - Recommend [${OWNER}]"
+    else
+      echo "  Owner ......... OK [${OWNER}]"
+    fi
+    if [ "${CGROUP}" != "${GROUP}" ]
+    then
+      echo "  Group ......... WARN [${CGROUP}] - Recommend [${GROUP}]"
+    else
+      echo "  Group ......... OK [${GROUP}]"
+    fi
+  fi
+}
+
+#---------------
 fnPRELIM()
 {
-  # Written for Stretch and above.  Jessie and older are not supported.
+  # Written for Raspbian Stretch and above.  Jessie and older are not supported.
+  # if os-release file exists...
   if [ -f /etc/os-release ]
   then
+    # source the os-release file
     . /etc/os-release 2>/dev/null
-    if [ "${VERSION_ID}" -lt 9 ]
+    # if Raspbian...
+    if [ "${ID}" = "raspbian" ]
     then
+      # and if older than Stretch...
+      if [ "${VERSION_ID}" -lt 9 ]
+      then
+        # too old.
+        echo
+        fnBANNER " UNSUPPORTED RASPBIAN VERSION"
+        echo "This script is designed for Raspbian GNU/Linux 9 (Stretch), and above."
+        echo "Version ${PRETTY_NAME} is not supported."
+        echo
+        exit 1
+      else
+        # if Raspbian, and Stretch or newer, then ok.
+        echo "OS version check:  ok"
+      fi
+    else
+      # if not Raspbian, then unsupported.
       echo
-      fnBANNER " UNSUPPORTED LINUX VERSION"
-      echo "This script is designed for Raspbian GNU/Linux 9 (stretch), and above."
-      echo "Version ${PRETTY_NAME} is not supported."
+      fnBANNER " LINUX VERSION UNKNOWN"
+      echo "This script is designed for Raspbian GNU/Linux 9 (Stretch), and above."
+      echo "Unable to identify your version of the operating system... Exiting."
       echo
       exit 1
-    else
-      echo "OS version check:  ok"
     fi
   else
+    # if os-release file doesn't exist...
     echo
     fnBANNER " LINUX VERSION UNKNOWN"
-    echo "This script is designed for Raspbian GNU/Linux 9 (stretch), and above."
+    echo "This script is designed for Raspbian GNU/Linux 9 (Stretch), and above."
     echo "Unable to identify your version of the operating system... Exiting."
     echo
     exit 1
@@ -221,11 +283,9 @@ fnSUDO()
     echo "${0} has not been run as root and sudo is not available, exiting." >&2
     exit 1
   else
-    if [ "${EUID}" -eq 0 ]
+    echo "running as user:   $(whoami)"
+    if [ "${EUID}" -ne 0 ]
     then
-      echo "running as root:   ok"
-    else
-      echo "running as user:   $(whoami)"
       if [ -n "${SUDO}" ]
       then
         echo "sudo is available: ok"
@@ -239,7 +299,7 @@ fnCHECK_VIRT()
 {
   if [ "$(systemd-detect-virt)" = "none" ]
   then
-    echo "virtual machine:   none"
+    echo "virtual machine:   ok"
   else
     echo
     fnBANNER " RUNNING WITHIN A VIRTUAL MACHINE IS NOT SUPPORTED"
@@ -256,7 +316,7 @@ fnCHECK_CHROOT()
   if ${SUDO} systemd-detect-virt --chroot 2>/dev/null
   then
     echo
-    fnBANNER " RUNNING WITHIN A CHROOT'D ENVIORNMENT IS NOT SUPPORTED"
+    fnBANNER " RUNNING WITHIN A CHROOT'D ENVIRONMENT IS NOT SUPPORTED"
     echo "This script does not support running in a chroot'd environment."
     echo "Please exit the chroot'd environment and run the script again."
     echo
@@ -298,6 +358,7 @@ fnDECODE_REV()
   fi
 }
 
+#---------------
 fnPRINT_DECODED_REV()
 {
   fnBANNER " DECODED SYSTEM REVISION NUMBER"
@@ -322,6 +383,7 @@ fnPRINT_DECODED_REV()
   # Revision [abc]03112 is v1.2 board with fix.
   # (First char, a, b, or c, refers to 1GB, 2GB, or 4GB memory.)
   # Revision d03114 is the new v1.4 board for the Pi 4B 8GB
+  # (First char, d, refers to 8GB memory.)
   if [ "${MY_MODEL_NAME}" = "4B" ] && [ "$(echo "${MY_REVISION}" | cut -c2-)" = "03111" ]
   then
     echo "This 4B contains a USB-C power design flaw."
@@ -341,10 +403,10 @@ fnCHK_PACKAGES()
   then
     #################################
     # First, the required packages
-    REQUIRED=$(dpkg -l 2>/dev/null | awk '{ print $2 }' | grep -i "^alsa-utils$\|^bc$\|^bluez$\|^coreutils$\|^i2c-tools$\|^iproute2$\|^libraspberrypi-bin$\|^lshw$\|^net-tools$\|^procps$\|^rpi-eeprom$\|^sed$\|^util-linux$\|^usbutils$\|^v4l-utils$\|^wireless-tools$")
+    REQUIRED=$(dpkg -l 2>/dev/null | awk '{ print $2 }' | grep -i "^alsa-utils$\|^bc$\|^bluez$\|^coreutils$\|^cron$\|^i2c-tools$\|^initramfs-tools$\|^iproute2$\|^libraspberrypi-bin$\|^lshw$\|^net-tools$\|^procps$\|^rpi-eeprom$\|^sed$\|^util-linux$\|^usbutils$\|^v4l-utils$\|^wireless-tools$")
     REQ_HIT=0
     REQ_MAX=0
-    for PACKAGE in alsa-utils bc bluez coreutils i2c-tools iproute2 libraspberrypi-bin lshw net-tools procps rpi-eeprom usbutils sed util-linux v4l-utils wireless-tools
+    for PACKAGE in alsa-utils bc bluez coreutils cron i2c-tools initramfs-tools iproute2 libraspberrypi-bin lshw net-tools procps rpi-eeprom usbutils sed util-linux v4l-utils wireless-tools
     do
       # If the Pi is not a 4B, skip checking for the rpi-eeprom package
       if [ "${MY_MODEL_NAME}" != "4B" ] && [ "${PACKAGE}" = "rpi-eeprom" ]
@@ -379,10 +441,28 @@ fnCHK_PACKAGES()
       ######################################
       # Now, the supplemental packages.
       # If installed, great.  If not installed, don't trouble the user to add them.
-      SUPPLEMENTAL=$(dpkg -l 2>/dev/null | awk '{ print $2 }' | grep -i "^cups-client$\|^dc$\|^docker-ce-cli$\|^ethtool$\|^hdparm$\|^lirc$\|^lvm2$\|^m4$\|^mdadm$\|^nfs-kernel-server$\|^nmap$\|^perl-base$\|^pigpiod$\|^python3-gpiozero$\|^quota$\|^rng-tools$\|^rpcbind$\|^rtl-sdr$\|^samba$\|^smartmontools$\|^sysbench$\|^sysstat$\|^systemd-container$\|^systemd-coredump$\|^watchdog$\|^wiringpi$\|^x11-xserver-utils$")
+
+      # Some of the supplemental package names have changed, between Stretch and Buster.  The next few lines
+      # accomodate these different package names.
+      # The package containing daemon "pigpiod" is called "pigpiod" on Buster, but called "pigpio" on Stretch.
+      # The package containing "docker" is called "docker-ce-cli" on Buster, but called "docker.io" on Stretch.
+      if [ "${VERSION_ID}" -eq 9 ]
+      then
+        # Package names on Stretch
+        PIGPIO_PKG=pigpio
+        DOCKER_PKG=docker.io
+      else
+        # Package names on Buster
+        PIGPIO_PKG=pigpiod
+        DOCKER_PKG=docker-ce-cli
+      fi
+
+      # The packages conditionally named above, appear as variables here...
+      SUPPLEMENTAL=$(dpkg -l 2>/dev/null | awk '{ print $2 }' | grep -i "^at$\|^chkrootkit$\|^clamav$\|^cups-client$\|^dc$\|^${DOCKER_PKG}$\|^ethtool$\|^hdparm$\|^lirc$\|^lm-sensors$\|^lvm2$\|^m4$\|^mdadm$\|^nfs-kernel-server$\|^nmap$\|^perl-base$\|^${PIGPIO_PKG}$\|^python3-gpiozero$\|^quota$\|^rng-tools$\|^rpcbind$\|^rtl-sdr$\|^samba$\|^smartmontools$\|^sysbench$\|^sysstat$\|^systemd-container$\|^systemd-coredump$\|^watchdog$\|^wiringpi$\|^x11-xserver-utils$")
       SUP_HIT=0
       SUP_MAX=0
-      for PACKAGE in cups-client dc docker-ce-cli ethtool hdparm lirc lvm2 m4 mdadm nfs-kernel-server nmap perl-base pigpiod python3-gpiozero quota rng-tools rpcbind rtl-sdr samba smartmontools sysbench sysstat systemd-container systemd-coredump watchdog wiringpi x11-xserver-utils
+      # They also appear as variables here...
+      for PACKAGE in at chkrootkit clamav cups-client dc ${DOCKER_PKG} ethtool hdparm lirc lm-sensors lvm2 m4 mdadm nfs-kernel-server nmap perl-base ${PIGPIO_PKG} python3-gpiozero quota rng-tools rpcbind rtl-sdr samba smartmontools sysbench sysstat systemd-container systemd-coredump watchdog wiringpi x11-xserver-utils
       do
         # If wiringpi is installed, it needs to be v2.52 on the Pi 4B - 1/2/4GB models only..
         # See - http://wiringpi.com/wiringpi-updated-to-2-52-for-the-raspberry-pi-4b/
@@ -408,6 +488,8 @@ fnCHK_PACKAGES()
           if [ -n "$(echo "${SUPPLEMENTAL}" | grep "${PACKAGE}")" ]
           then
             (( SUP_HIT++ ))
+#         else
+#           echo "package ${PACKAGE} not found"
           fi
           (( SUP_MAX++ ))
         fi
@@ -439,13 +521,10 @@ fnLSHW_BUSINFO()
   LSHW_GENERIC=$(grep "generic" /tmp/.lshw_businfo.${PPID} 2>/dev/null | head -1)
   LSHW_MULTIMEDIA=$(grep "multimedia" /tmp/.lshw_businfo.${PPID} 2>/dev/null | head -1)
   LSHW_COMMUNICATION=$(grep "communication" /tmp/.lshw_businfo.${PPID} 2>/dev/null | head -1)
-  echo
+  echo "Ready."
   echo
 }
 
-##################################################
-# ALL SET - START ACTUALLY GATHERING SOME DATA...
-##################################################
 #---------------
 fnSYSTEM_ID()
 {
@@ -462,29 +541,89 @@ fnOS()
   echo "${PRETTY_NAME}"
   uname -a
   echo
+
   if [ "$(vcgencmd get_config arm_64bit | cut -f2 -d"=")" = "1" ]
   then
-    echo "KERNEL IS..... 64-BIT"
+    echo "KERNEL IS........... 64-BIT"
   else
-    echo "KERNEL IS..... 32-BIT"
+    echo "KERNEL IS........... 32-BIT"
   fi
+
   if [ -c /dev/kvm ]
   then
-    echo "KVM SUPPORT... enabled"
+    echo "KVM SUPPORT......... enabled"
   else
-    echo "KVM SUPPORT... disabled"
+    echo "KVM SUPPORT......... disabled"
+  fi
+
+  MODPROBE_CONFIGS=0
+  if [ "$(lsmod | grep configs)" = "" ]
+  then
+    ${SUDO} modprobe configs
+    MODPROBE_CONFIGS=1
+  fi
+  if [ -n "$(${SUDO} gunzip -c /proc/config.gz | grep "CONFIG_SECURITY_SELINUX=[ym]")" ]
+  then
+    echo "SELINUX............. enabled"
+  else
+    echo "SELINUX............. not present in this kernel"
+  fi
+  if [ -n "$(${SUDO} gunzip -c /proc/config.gz | grep "CONFIG_SECURITY_APPARMOR=[ym]")" ]
+  then
+    echo "APPARMOR............ enabled"
+  else
+    echo "APPARMOR............ not present in this kernel"
+  fi
+  if [ -n "$(${SUDO} gunzip -c /proc/config.gz | grep "CONFIG_AUDIT=[ym]")" ]
+  then
+    echo "AUDITD SUPPORT...... enabled"
+  else
+    echo "AUDITD SUPPORT...... not present in this kernel"
+  fi
+
+  if [ "${MODPROBE_CONFIGS}" = "1" ]
+  then
+    ${SUDO} rmmod configs
   fi
   echo
+
+  echo -n "DEFAULT BOOT TARGET. "
+  TARGET="$(ls -l /lib/systemd/system/default.target | awk '{ print $NF }' | sed 's/\// /g' | awk '{ print $NF }')"
+  systemctl list-units --type=target | grep "${TARGET}" | awk '{ print $5" "$6" "$7" "$8" "$9 }'
+
+  if [ -f /etc/lightdm/lightdm.conf ]
+  then
+    echo -n "GUI AUTOLOGIN....... "
+    AUTOLOGIN_GUI="$(grep "^autologin-user=" /etc/lightdm/lightdm.conf | cut -f2 -d"=")"
+    if [ -n "${AUTOLOGIN_GUI}" ]
+    then
+      echo "${AUTOLOGIN_GUI}"
+    else
+      echo "none"
+    fi
+  fi
+
+  echo -n "TTY AUTOLOGIN....... "
+  AUTOLOGIN_TTY="$(grep "^ExecStart=" /lib/systemd/system/getty@.service | grep "autologin" | awk '{ print $3 }')"
+  if [ -n "${AUTOLOGIN_TTY}" ]
+  then
+    echo "${AUTOLOGIN_TTY}"
+  else
+    echo "none"
+  fi
+
+  echo
+  echo -n "UPTIME.............. "
   uptime -p
   echo
 }
 
-
+#---------------
 fnMAC()
 {
   fnBANNER " MAC-ADDRESS(ES)"
   MACS=$(ifconfig | grep '[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:' | awk '{print $2}' | tr "a-f" "A-F")
-  echo "${MACS}"
+  echo "${MACS}" | sort
   echo
 }
 
@@ -530,15 +669,33 @@ fnCPU()
 }
 
 #---------------
+fnSENSORS()
+{
+  # SUPPLEMENTAL STUFF HERE
+  if type -path sensors >/dev/null 2>&1
+  then
+    fnBANNER " LM-SENSORS (***)"
+    sensors
+  fi
+  if type -path sensors-detect >/dev/null 2>&1
+  then
+    fnSUB_BANNER " Searching for sensors..."
+    ${SUDO} sensors-detect --auto
+    echo
+  fi
+  echo " ----------------------------------------------------"
+  systemctl status lm-sensors.service
+  echo
+}
+
+#---------------
 fnHOW_BOOT()
 {
   # Boot-from-USB mass storage will be handled differently on the Pi 4B,
   # versus older models.
   if [ "${MY_MODEL_NAME}" = "4B" ]
   then
-    # The Pi 4 uses an EEPROM to control it's boot source.  As of this
-    # writing, boot-from-USB mass storage is promised in a future EEPROM
-    # update, as they focus on stabilizing boot-from-network, first.
+    # The Pi 4 uses an EEPROM to control it's boot source.
     fnBANNER " PI MODEL 4B EEPROM VERSION"
     vcgencmd bootloader_version
     echo
@@ -595,7 +752,7 @@ fnHOW_BOOT()
 #---------------
 fnDTOVERLAYS()
 {
-  fnBANNER " ACTIVE DTOVERLAYS"
+  fnBANNER " ACTIVE DEVICE TREE OVERLAYS"
   ${SUDO} vcdbg log msg 2>&1 | grep "Loaded overlay" | cut -f2- -d":"
   echo
 }
@@ -603,8 +760,16 @@ fnDTOVERLAYS()
 #---------------
 fnDTPARAMS()
 {
-  fnBANNER " ACTIVE DTPARAMS"
+  fnBANNER " ACTIVE DEVICE TREE PARAMS"
   ${SUDO} vcdbg log msg 2>&1 | grep "dtparam:" | cut -f2- -d":"
+  echo
+}
+
+#---------------
+fnSYSCTL()
+{
+  fnBANNER " SYSCTL KERNEL VARIABLES"
+  cat /etc/sysctl.d/*.conf | grep -v "^$\|^#"
   echo
 }
 
@@ -630,7 +795,6 @@ fnLEDS()
   # 6=Alt                      7=Speed/Flash
   # 8=Link                     9=Activity
   #
-  # The comments are also hard to decipher (e.g. what's the difference between 0, 2, and 7?):
   # My understanding is:
   #
   # Speed means on for a fast link (probably 1Gb/s), otherwise off.
@@ -685,7 +849,7 @@ fnCMDLINE()
 fnCONFIGTXT()
 {
   fnBANNER " CONFIG.TXT SETTINGS"
-  grep -v "^$" < /boot/config.txt 2>/dev/null | grep -v "^#"
+  grep -v "^$\|^#" < /boot/config.txt 2>/dev/null
   echo
 }
 
@@ -751,10 +915,36 @@ fnPROCSPEED()
 }
 
 #---------------
+fnOVERCLOCK()
+{
+  # For details see:
+  # https://www.raspberrypi.org/documentation/configuration/config-txt/overclocking.md
+
+  CLOCK_STUFF=$(grep -v "^$\|^#" /boot/config.txt | grep -i "^arm_freq=\|^gpu_freq=\|^core_freq=\|^h264_freq=\|^isp_freq=\|^v3d_freq=\|^hevc_freq=\|^sdram_freq=\|^over_voltage=\|^over_voltage_sdram=\|^over_voltage_sdram_c=\|^over_voltage_sdram_i=\|^over_voltage_sdram_p=\|^force_turbo=\|^initial_turbo=\|^arm_freq_min=\|^core_freq_min=\|^gpu_freq_min=\|^h264_freq_min=\|^isp_freq_min=\|^v3d_freq_min=\|^hevc_freq_min=\|^sdram_freq_min=\|^over_voltage_min=\|^temp_limit=\|^temp_soft_limit=\|^hdmi_enable_4kp60=\|^enable_tvout=")
+
+  if [ -n "${CLOCK_STUFF}" ]
+  then
+    fnBANNER " CLOCKSPEED / OVERCLOCKING OPTIONS FOUND IN CONFIG.TXT"
+    echo "${CLOCK_STUFF}" | sort
+    echo
+  fi
+}
+
+#---------------
 fnRING_OSCILLATOR()
 {
   fnBANNER " RING OSCILLATOR STATS"
-  vcgencmd read_ring_osc
+  if type -path dc >/dev/null 2>&1
+  then
+    # SUPPLEMENTAL CONVERSION to Fahrenheit
+    DEG_SYMBOL=$'\xc2\xb0'
+    ALL="$(vcgencmd read_ring_osc)"
+    C="$(vcgencmd read_ring_osc | cut -f4 -d"(" | cut -f1 -d"'")"
+    F="$(echo "2 k 9 5 / ${C} * 32 + p" | dc)"
+    echo "${ALL} ($(printf "%3.1f" "${F}")${DEG_SYMBOL}F) (***)"
+  else
+    vcgencmd read_ring_osc
+  fi
   echo
 }
 
@@ -900,14 +1090,14 @@ fnTHROTTLES()
   # "vcgencmd get_throttled"
   # Bit	Meaning
   # ===============
-  #  0	undervoltage detected
-  #  1	Arm frequency capped
+  #  0	Undervoltage currently detected
+  #  1	Arm frequency currently capped
   #  2	Currently throttled
-  #  3	Soft temperature limit active
-  # 16	Under voltage has occured
-  # 17	Arm frequency cap has occured
-  # 18	Throttling has occurred
-  # 19	Soft Temperature limit has occurred
+  #  3	Soft temperature limit currently active
+  # 16	Under voltage has occured at least once since last boot
+  # 17	Arm frequency cap has occured at least once since last boot
+  # 18	Throttling has occurred at least once since last boot
+  # 19	Soft Temperature limit has occurred at least once since last boot
 
   #Flag Bits
   UNDERVOLTED=0x1
@@ -1000,7 +1190,7 @@ fnULIMIT_CORE()
 
   if [ -f /etc/systemd/coredump.conf ]
   then
-    echo " Contents of /etc/systemd/coredump.conf... (***)"
+    echo " Contents of /etc/systemd/coredump.conf..."
     grep -v "^# " < /etc/systemd/coredump.conf 2>/dev/null | grep -v "^#$" | grep -v "^$"
     echo
   fi
@@ -1014,10 +1204,10 @@ fnULIMIT_CORE()
 
   if type -path coredumpctl >/dev/null 2>&1
   then
-    echo " journalctl reports the following core dumps... (***)"
+    echo " journalctl reports the following core dumps..."
     ${SUDO} coredumpctl list 2>&1
     echo
-    echo " Core dumps present in /var/lib/systemd/coredump... (***)"
+    echo " Core dumps present in /var/lib/systemd/coredump..."
     ls -l /var/lib/systemd/coredump
     echo
   fi
@@ -1029,14 +1219,45 @@ fnQUOTAS()
   # SUPPLEMENTAL STUFF HERE
   if type -path repquota >/dev/null 2>&1
   then
-    if [ -n "$(grep "[usr\|grp]quota" /etc/fstab 2>/dev/null)" ]
+    if [ -n "$(grep "[usr\|grp]quota" /etc/fstab 2>/dev/null | grep -v "^#")" ]
     then
       fnBANNER " QUOTAS (***)"
       echo " The following filesystems are configured for quotas..."
-      grep "[usr\|grp]quota" /etc/fstab 2>/dev/null
+      grep "[usr\|grp]quota" /etc/fstab 2>/dev/null | grep -v "^#"
       echo
       ${SUDO} repquota -u -g -v -a -s -t | grep -v "^#"
     fi
+  fi
+}
+
+#---------------
+fnOVERLAYFS()
+{
+  if [ -n "$(grep "boot=overlay" /boot/cmdline.txt)" ]
+  then
+    fnBANNER " OVERLAY FILESYSTEM"
+    echo "Found \"boot=overlay\" in cmdline.txt"
+    echo
+    echo "Found the following initrd.img overlay files in /boot:"
+    ls /boot/initrd.img* | grep overlay
+    echo
+    echo "Mounted overlay filesystems:"
+    df -Th -t overlay 2>&1
+    echo
+    echo "Checking fstab for read-only /boot filesystem:"
+    grep /boot /etc/fstab | grep "ro" | grep -v "^#"
+    echo
+    echo "Current status of /boot filesystem:"
+    MOUNT_STATUS="$(mount | grep "/boot" | cut -f2 -d"(" | cut -f1 -d",")"
+    case ${MOUNT_STATUS} in
+      "rw") echo "/boot is currently read-write"
+        ;;
+      "ro") echo "/boot is currently read-only"
+        ;;
+      *)    echo "unknown"
+        ;;
+    esac
+    echo
   fi
 }
 
@@ -1137,7 +1358,7 @@ fnV4LDEV()
 #---------------
 fnCAMERA()
 {
-  fnBANNER " CAMERA"
+  fnBANNER " CAMERA (CSI)"
   # Refers to the small cameras that plug into the Pi's CSI connector
   vcgencmd get_camera
   if [ "$(vcgencmd get_config disable_camera_led | cut -f2 -d"=")" -eq 1 ]
@@ -1149,7 +1370,7 @@ fnCAMERA()
 }
 
 #---------------
-fnW1()
+fn1W()
 {
   if [ -d /sys/bus/w1/devices ]
   then
@@ -1158,10 +1379,13 @@ fnW1()
     lsmod | grep w1_gpio
     echo
     echo " Discovered 1-WIRE Drivers..."
-    find /sys/bus/w1/drivers -type d | grep -v ^.$ | grep -v /drivers$ | while read -r DRIVER
+    find /sys/bus/w1/drivers -type d | grep -v "^.$" | grep -v /drivers$ | while read -r DRIVER
     do
       basename "${DRIVER}"
     done
+    echo
+    echo " 1-WIRE Addresses in /sys/bus/w1/devices..."
+    ls -1 /sys/bus/w1/devices 2>/dev/null
     echo
   fi
 }
@@ -1176,7 +1400,7 @@ fnSPI()
     lsmod | grep spi
     echo
     echo " Discovered SPI Drivers..."
-    find /sys/bus/spi/drivers -type d | grep -v ^.$ | grep -v /drivers$ | while read -r DRIVER
+    find /sys/bus/spi/drivers -type d | grep -v "^.$" | grep -v "/drivers$" | while read -r DRIVER
     do
       basename "${DRIVER}"
     done
@@ -1212,7 +1436,7 @@ fnI2C()
     lsmod | grep i2c
     echo
     echo " Discovered I2C Drivers..."
-    find /sys/bus/i2c/drivers -type d | grep -v ^.$ | grep -v /drivers$ | grep -v /dummy$ | grep -v /stmpe-i2c$ | while read -r DRIVER
+    find /sys/bus/i2c/drivers -type d | grep -v "^.$\|/drivers$\|/dummy$\|/stmpe-i2c$" | while read -r DRIVER
     do
       basename "${DRIVER}"
     done
@@ -1300,7 +1524,7 @@ fnHWWD()
     fnBANNER " BROADCOM WATCHDOG TIMER (***)"
     dmesg | grep watchdog
     echo
-    grep -v ^$ < /etc/watchdog.conf 2>/dev/null | grep -v "^#"
+    grep -v "^$\|^#" < /etc/watchdog.conf 2>/dev/null
     echo
     DIR="$(grep "^test-directory" /etc/watchdog.conf 2>/dev/null | awk '{ print $3 }')"
     if [ -n "${DIR}" ]
@@ -1396,33 +1620,65 @@ fnSMART()
   # SUPPLEMENTAL STUFF HERE
   if type -path smartctl >/dev/null 2>&1
   then
-    fnBANNER " USB STORAGE WITH S.M.A.R.T. (***)"
-    if [ -n "$(smartctl --scan -d ata | grep -v aborted)" ]
+    fnBANNER " USB ATA/SATA & SCSI/SAS STORAGE WITH SMART TECHNOLOGY (***)"
+    if [ -n "$(smartctl --scan -d sat | grep -v aborted)" ]
     then
-      echo "Scanning ATA Devices..."
-      smartctl --scan -d ata | grep -v aborted
+      echo "Scanning Devices..."
+      smartctl --scan -d sat | grep -v aborted
       echo
-      smartctl --scan -d ata | grep -v aborted | awk '{ print $1 }' | while read -r DEV
+      fnSUB_BANNER "Checking \"noatime\" mount option on ATA/SATA and SCSI/SAS filesystems"
+      echo "The \"noatime\" option disables updates to the access timestamp of an inode,"
+      echo "whenever a file is accessed (eg: when files are merely read.)  Disabling"
+      echo "these updates eliminates a huge number of writes to a device over time,"
+      echo "especially on filesystems that host the operating system itself.  This is"
+      echo "particularly important for SD & SSD devices, as excessive writes will shorten"
+      echo "the lifespan of the device.  Mechanical drives can also benefit, from the"
+      echo "ever-so-slight performance gain."
+      echo
+      echo "This check examines mounted filesystems ONLY."
+      echo
+      smartctl --scan -d sat | grep -v aborted | awk '{ print $1 }' | while read -r DEV
       do
-        fnSUB_BANNER " S.M.A.R.T. DEVICE: ${DEV}"
-        ${SUDO} smartctl -d ata --xall "${DEV}"
-        echo
+        lsblk --ascii "${DEV}" -o name,mountpoint | grep -v SWAP | grep -v MOUNTPOINT | grep "/" | awk '{ print $NF }' | sort -u | while read -r MOUNTPOINT
+        do
+          NOATIME="$(grep -v "^#\|^$" < /etc/fstab | awk '{ print $2 " " $4 }' | grep "^${MOUNTPOINT} " | grep "noatime")"
+          printf "%-16s" "${MOUNTPOINT}"
+          if [ -n "${NOATIME}" ]
+          then
+            echo ": noatime is specified for this filesystem, in /etc/fstab"
+          else
+            echo ": noatime is not specified for this filesystem, in /etc/fstab"
+          fi
+        done
+      done
+      echo
+      fnSUB_BANNER "Active statements in /etc/smartd.conf:"
+      grep -v "^#\|^$" /etc/smartd.conf
+      echo
+      fnSUB_BANNER " SMARTD.SERVICE"
+      systemctl status smartd.service
+      echo
+      smartctl --scan -d sat | grep -v aborted | awk '{ print $1 }' | while read -r DEV
+      do
+        fnBANNER " SMART DEVICE: ${DEV}"
+        ${SUDO} smartctl --info "${DEV}" -d sat
+        fnSUB_BANNER "Full Device Details..."
+        ${SUDO} smartctl -d sat --xall "${DEV}"
       done
     fi
-    if [ -n "$(smartctl --scan -d scsi | grep -v aborted)" ]
-    then
-      echo "Scanning SCSI Devices..."
-      smartctl --scan -d scsi | grep -v aborted
-      echo
-      smartctl --scan -d scsi | grep -v aborted | awk '{ print $1 }' | while read -r DEV
-      do
-        fnSUB_BANNER " S.M.A.R.T. DEVICE: ${DEV}"
-        ${SUDO} smartctl -d scsi --xall "${DEV}"
-        echo
-      done
-    fi
-    fnSUB_BANNER " SMARTD.SERVICE"
-    systemctl status smartd.service
+  fi
+}
+
+#---------------
+fnQUIRKS()
+{
+  if [ -n "$(grep "quirks" /boot/cmdline.txt)" ]
+  then
+    fnBANNER " USB STORAGE QUIRKS CHECK"
+    echo "USB storage \"quirks\" statement found in cmdline.txt."
+    echo "The \"quirks\" directive disables UAS for a given storage device."
+    echo "Disabling UAS also disables the trim functions of the device."
+    echo "At least one USB storage device may not be capable of \"trim\"."
     echo
   fi
 }
@@ -1430,29 +1686,31 @@ fnSMART()
 #---------------
 fnTRIM()
 {
-  fstrim -An >/dev/null 2>&1
-  FSTRIM_STATUS=${?}
-  case ${FSTRIM_STATUS} in
-    0|64)
-      fnBANNER " USB STORAGE WITH TRIM ENABLED"
-      fstrim -Avn
-      echo
-      fnSUB_BANNER " UDEV RULES FOR TRIM"
-      find /etc/udev -type f -exec grep unmap {} \; -print
-      echo
-      fnSUB_BANNER " FSTRIM.TIMER"
-      systemctl status fstrim.timer
-      echo
-      if [ -n "$(grep discard /etc/fstab 2>/dev/null)" ]
-      then
-        fnSUB_BANNER " DISCARD ENTRIES IN FSTAB"
-        grep discard /etc/fstab 2>/dev/null
+  if [ -n "$(find /etc/udev -type f -exec grep unmap {} \; | grep -v "^#")" ]
+  then
+    fnBANNER " USB STORAGE WITH TRIM"
+    ${SUDO} fstrim --all -v 2>/dev/null
+    FSTRIM_STATUS=${?}
+    case ${FSTRIM_STATUS} in
+      0|64)
         echo
-      fi
-      ;;
-    *)
-      ;;
-  esac
+        fnSUB_BANNER " UDEV RULES FOR TRIM"
+        find /etc/udev -type f -exec grep unmap {} \; -print | grep -v "^#"
+        echo
+        fnSUB_BANNER " FSTRIM.TIMER"
+        systemctl status fstrim.timer
+        echo
+        if [ -n "$(grep discard /etc/fstab 2>/dev/null)" ]
+        then
+          fnSUB_BANNER " DISCARD ENTRIES IN FSTAB"
+          grep discard /etc/fstab 2>/dev/null
+          echo
+        fi
+        ;;
+      *)
+        ;;
+    esac
+  fi
 }
 
 #---------------
@@ -1477,7 +1735,7 @@ fnRAID()
     grep "^[a-zA-Z]" < /proc/mdstat 2>/dev/null
     echo
     echo "Contents of /etc/mdadm/mdadm.conf..."
-    grep -v ^$ < /etc/mdadm/mdadm.conf 2>/dev/null | grep -v "^#"
+    grep -v "^$\|^#" < /etc/mdadm/mdadm.conf 2>/dev/null
     echo
     grep ^md < /proc/mdstat 2>/dev/null | awk '{ print $1 }' | while read -r MD
     do
@@ -1539,12 +1797,15 @@ fnLVM()
 fnHDPARM()
 {
   # SUPPLEMENTAL STUFF HERE
-  ls -l /dev/sd? | awk '{ print $NF }' | while read -r DEV
-  do
-    fnBANNER " HDPARM SATA/IDE DEVICE PARAMETERS - ${DEV} (***)" | grep -v "^$"
-    ${SUDO} hdparm -I --verbose "${DEV}"
-    echo
-  done
+  if type -path hdparm >/dev/null 2>&1
+  then
+    ls -l /dev/sd? | awk '{ print $NF }' | while read -r DEV
+    do
+      fnBANNER " HDPARM ATA/SATA DEVICE PARAMETERS - ${DEV} (***)" | grep -v "^$"
+      ${SUDO} hdparm -I --verbose "${DEV}" 2>/dev/null
+      echo
+    done
+  fi
 }
 
 #---------------
@@ -1553,11 +1814,71 @@ fnFSTAB()
   if [ -f /etc/fstab ]
   then
     fnBANNER " FSTAB FILE"
-    grep -v ^$ < /etc/fstab 2>/dev/null | grep -v "^#"
+    grep -v "^$\|^#" < /etc/fstab 2>/dev/null
     echo
   else
     # In truth, I can't envision a booted/running system without this file.
     echo "Missing file /etc/fstab" >&2
+  fi
+}
+
+#---------------
+fnCLAM()
+{
+  # SUPPLEMENTAL STUFF HERE
+  if type -path clamscan >/dev/null 2>&1
+  then
+    fnBANNER " CLAMAV ANTI-VIRUS SCANNER (***)"
+    if type -path clamscan >/dev/null 2>&1
+    then
+      echo "CLAMSCAN.... $(clamscan --version 2>/dev/null)"
+    else
+      echo "CLAMSCAN.... not found"
+    fi
+
+    if type -path freshclam >/dev/null 2>&1
+    then
+      echo "FRESHCLAM... $(freshclam --version 2>/dev/null)"
+    else
+      echo "FRESHCLAM... not found"
+    fi
+
+    if type -path clamd >/dev/null 2>&1
+    then
+      echo "CLAMD....... $(clamd --version 2>/dev/null)"
+    else
+      echo "CLAMD....... not found"
+    fi
+
+    if type -path clamdscan >/dev/null 2>&1
+    then
+      echo "CLAMDSCAN... $(clamdscan --version 2>/dev/null)"
+    else
+      echo "CLAMDSCAN.... not found"
+    fi
+
+    echo
+
+    if type -path clamconf >/dev/null 2>&1
+    then
+      echo " ----------------------------------------------------"
+      clamconf -n 2>/dev/null
+      echo
+    fi
+
+    if [ -n "$(systemctl | grep clamav)" ]
+    then
+      systemctl | grep clamav | awk '{ print $1 }' | while read -r CLAM_SVC
+      do
+        echo " ----------------------------------------------------"
+        systemctl status "${CLAM_SVC}"
+        echo
+      done
+    else
+      echo " ----------------------------------------------------"
+      echo "No clamav-related systemd services running."
+      echo
+    fi
   fi
 }
 
@@ -1649,8 +1970,8 @@ fnSERIAL()
 {
   fnBANNER " UARTS AND USB SERIAL PORTS"
   # By default, on Raspberry Pis equipped with wireless/Bluetooth module,
-  # (Raspberry Pi 3 and Raspberry Pi Zero W), the PL011 UART id connected
-  # to tye Bluetooth module, while the mini UART is used as the primary
+  # (Raspberry Pi 3 and Raspberry Pi Zero W), the PL011 UART is connected
+  # to the Bluetooth module, while the mini UART is used as the primary
   # UART and will have a Linux console on it.  On all other models, the
   # PL011 is used as the primary UART.
   #
@@ -1764,7 +2085,7 @@ fnBT()
         echo "Additional (Non-default) BT Controller..."
       fi
       BTSHOW_OUT="$(echo show "${BTMAC}" | ${SUDO} bluetoothctl 2>/dev/null)"
-      echo "${BTSHOW_OUT}" | grep -v "\[" | grep -v ^$ | grep -v "Agent registered" | grep -v "Device registered not available"
+      echo "${BTSHOW_OUT}" | grep -v "\[" | grep -v "^$" | grep -v "Agent registered" | grep -v "Device registered not available"
       echo
     done
     #---------------
@@ -1774,7 +2095,7 @@ fnBT()
     then
       echo "${BTPAIRED_OUT}" | grep -v "\[" | awk '{ print $2 }' | while read -r BTMAC
       do
-        echo "info ${BTMAC}" | ${SUDO} bluetoothctl 2>/dev/null | grep -v "\[" | grep -v ^$ | grep -v "Agent registered" | grep -v "Device registered not available"
+        echo "info ${BTMAC}" | ${SUDO} bluetoothctl 2>/dev/null | grep -v "\[" | grep -v "^$" | grep -v "Agent registered" | grep -v "Device registered not available"
       done
       echo
     fi
@@ -2029,12 +2350,31 @@ EOF
 }
 
 #---------------
+fnLOGROTATE()
+{
+  fnBANNER " LOGROTATE"
+  echo " Contents of /etc/logrotate.conf:"
+  grep -v "^$" /etc/logrotate.conf
+  echo
+  echo " ----------------------------------------------------"
+  echo " logrotate config files in /etc/logrotate.d ..."
+  ls /etc/logrotate.d
+  echo
+  if [ -n "$(systemctl | grep "logrotate.timer")" ]
+  then
+    echo " ----------------------------------------------------"
+    systemctl status logrotate.timer
+    echo
+  fi
+}
+
+#---------------
 fnRCLOCAL()
 {
   if [ -f /etc/rc.local ]
   then
-    fnBANNER " RC.LOCAL"
-    grep -v ^$ < /etc/rc.local 2>/dev/null | grep -v ^#
+    fnBANNER " CONTENTS OF RC.LOCAL"
+    grep -v "^$\|^#" < /etc/rc.local 2>/dev/null
     echo
   else
     echo "Missing file /etc/rc.local" >&2
@@ -2042,7 +2382,7 @@ fnRCLOCAL()
 }
 
 #---------------
-fnLOCAL()
+fnLOCALE()
 {
   if [ -f /etc/default/locale ] && [ -f /etc/default/keyboard ] && [ -f /etc/default/console-setup ] && [ -f /etc/timezone ]
   then
@@ -2065,7 +2405,7 @@ fnLOCAL()
 fnLIRC()
 {
   # SUPPLEMENTAL STUFF HERE
-  if [ -n "$(find /dev/lirc* -print)" ]
+  if [ -n "$(find /dev/lirc* -print 2>/dev/null)" ]
   then
     fnBANNER " LIRC - LINUX INFRA-RED COMMUNICATION DEVICES (***)"
     lsmod | grep "ir_" | sort
@@ -2148,57 +2488,64 @@ fnTOUCH()
 #---------------
 fnDISPLAY()
 {
+  if [ "${VERSION_ID}" -ne 9 ]
+  then
+    # It seems that Stretch doesn't support the "-1" flag
+    # for "vcgencmd display_power", to test specific displays.
+    # So, skip this first section, if Stretch.
+    fnBANNER " DISPLAY POWER UP STATUS"
+    echo "DISPLAY         ID  STATUS"
+    echo "--------------------------"
+    echo -e -n "Main LCD        0"
+    case $(vcgencmd display_power -1 0 | cut -f2 -d"=") in
+      "0") echo "   off"
+          ;;
+      "1") echo "   ON"
+          ;;
+        *) echo "   undetected"
+          ;;
+    esac
+    echo -e -n "Secondary LCD   1"
+    case $(vcgencmd display_power -1 1 | cut -f2 -d"=") in
+      "0") echo "   off"
+          ;;
+      "1") echo "   ON"
+          ;;
+        *) echo "   undetected"
+          ;;
+    esac
+    echo -e -n "HDMI 0          2"
+    case $(vcgencmd display_power -1 2 | cut -f2 -d"=") in
+      "0") echo "   off"
+          ;;
+      "1") echo "   ON"
+          ;;
+        *) echo "   undetected"
+          ;;
+    esac
+    echo -e -n "Composite       3"
+    case $(vcgencmd display_power -1 3 | cut -f2 -d"=") in
+      "0") echo "   off"
+          ;;
+      "1") echo "   ON"
+          ;;
+        *) echo "   undetected"
+          ;;
+    esac
+    echo -e -n "HDMI 1          7"
+    case $(vcgencmd display_power -1 7 | cut -f2 -d"=") in
+      "0") echo "   off"
+          ;;
+      "1") echo "   ON"
+          ;;
+        *) echo "   undetected"
+          ;;
+    esac
+    echo
+  fi
+
   # Unfortunately, tvservice is useless with vc4-kms-v3d(-pi4),
   # but ok with broadcom and "fake" gl driver.
-  fnBANNER " DISPLAY POWER UP STATUS"
-  echo "DISPLAY         ID  STATUS"
-  echo "--------------------------"
-  echo -e -n "Main LCD        0"
-  case $(vcgencmd display_power -1 0 | cut -f2 -d"=") in
-    "0") echo "   OFF"
-        ;;
-    "1") echo "   ON"
-        ;;
-      *) echo "   undetected"
-        ;;
-  esac
-  echo -e -n "Secondary LCD   1"
-  case $(vcgencmd display_power -1 1 | cut -f2 -d"=") in
-    "0") echo "   OFF"
-        ;;
-    "1") echo "   ON"
-        ;;
-      *) echo "   undetected"
-        ;;
-  esac
-  echo -e -n "HDMI 0          2"
-  case $(vcgencmd display_power -1 2 | cut -f2 -d"=") in
-    "0") echo "   OFF"
-        ;;
-    "1") echo "   ON"
-        ;;
-      *) echo "   undetected"
-        ;;
-  esac
-  echo -e -n "Composite       3"
-  case $(vcgencmd display_power -1 3 | cut -f2 -d"=") in
-    "0") echo "   OFF"
-        ;;
-    "1") echo "   ON"
-        ;;
-      *) echo "   undetected"
-        ;;
-  esac
-  echo -e -n "HDMI 1          7"
-  case $(vcgencmd display_power -1 7 | cut -f2 -d"=") in
-    "0") echo "   OFF"
-        ;;
-    "1") echo "   ON"
-        ;;
-      *) echo "   undetected"
-        ;;
-  esac
-  echo
   if [ "${DISP_DRIVER}" = "broadcom" ] || [ "${DISP_DRIVER}" = "fake" ]
   then
     fnBANNER " HDMI DISPLAY DATA"
@@ -2258,9 +2605,17 @@ fnDISPLAY()
 fnROWS_COLS()
 {
   fnBANNER " CURRENT ROWS & COLUMNS"
-  ROWS=$(tput lines)
-  COLS=$(tput cols)
-  echo "Screen is ${ROWS} rows X ${COLS} columns"
+  echo "Term type is: ${TERM}"
+  echo
+  if [ "${TERM}" = "" ] || [ "${TERM}" = "dumb" ]
+  then
+    echo "Environment variable TERM not defined."
+    echo "Unable to determine rows and columns."
+  else
+    ROWS=$(tput lines)
+    COLS=$(tput cols)
+    echo "Screen is ${ROWS} rows X ${COLS} columns"
+  fi
   echo
 }
 
@@ -2442,7 +2797,7 @@ fnNETF_FILES()
   if [ -f /etc/resolv.conf ]
   then
     fnBANNER " RESOLV.CONF"
-    grep -v ^$ < /etc/resolv.conf 2>/dev/null | grep -v ^#
+    grep -v "^$\|^#" < /etc/resolv.conf 2>/dev/null
     echo
   else
     echo "Missing file /etc/resolv.conf" >&2
@@ -2451,7 +2806,7 @@ fnNETF_FILES()
   if [ -f /etc/hosts ]
   then
     fnBANNER " HOSTS FILE"
-    grep -v ^$ < /etc/hosts 2>/dev/null | grep -v ^#
+    grep -v "^$\|^#" < /etc/hosts 2>/dev/null
     echo
   else
     echo "Missing file /etc/hosts" >&2
@@ -2460,7 +2815,7 @@ fnNETF_FILES()
   if [ -f /etc/networks ]
   then
     fnBANNER " NETWORKS FILE"
-    grep -v ^$ < /etc/networks 2>/dev/null | grep -v ^#
+    grep -v "^$\|^#" < /etc/networks 2>/dev/null
     echo
   else
     echo "Missing file /etc/networks" >&2
@@ -2469,7 +2824,7 @@ fnNETF_FILES()
   if [ -f /etc/iptables.up.rules ]
   then
     fnBANNER " IPV4 FIREWALL RULES"
-    grep -v ^$ < /etc/iptables.up.rules 2>/dev/null | grep -v ^#
+    grep -v "^$\|^#" < /etc/iptables.up.rules 2>/dev/null
     echo
   else
     echo "Missing file /etc/iptables.up.rules" >&2
@@ -2478,7 +2833,7 @@ fnNETF_FILES()
   if [ -f /etc/ip6tables.up.rules ]
   then
     fnBANNER " IPV6 FIREWALL RULES"
-    grep -v ^$ < /etc/ip6tables.up.rules 2>/dev/null | grep -v ^#
+    grep -v "^$\|^#" < /etc/ip6tables.up.rules 2>/dev/null
     echo
   else
     echo "Missing file /etc/ip6tables.up.rules" >&2
@@ -2487,10 +2842,10 @@ fnNETF_FILES()
   if [ -f /etc/hosts.deny ]
   then
     fnBANNER " TCPWRAPPERS: HOSTS.DENY"
-    HITS=$(grep -v "^#" < /etc/hosts.deny 2>/dev/null | grep -v "^$" | grep -c .)
+    HITS=$(grep -v "^$\|^#" < /etc/hosts.deny 2>/dev/null | grep -c .)
     if [ "${HITS}" -ne 0 ]
     then
-      grep -v "^#" < /etc/hosts.deny 2>/dev/null | grep -v "^$"
+      grep -v "^#\|^$" < /etc/hosts.deny 2>/dev/null
     else
       echo "file is empty"
     fi
@@ -2502,10 +2857,10 @@ fnNETF_FILES()
   if [ -f /etc/hosts.allow ]
   then
     fnBANNER " TCPWRAPPERS: HOSTS.ALLOW"
-    HITS=$(grep -v "^#" < /etc/hosts.allow 2>/dev/null | grep -v "^$" | grep -c .)
+    HITS=$(grep -v "^#\|^$" < /etc/hosts.allow 2>/dev/null | grep -c .)
     if [ "${HITS}" -ne 0 ]
     then
-      grep -v "^#" < /etc/hosts.allow 2>/dev/null | grep -v "^$"
+      grep -v "^#\|^$" < /etc/hosts.allow 2>/dev/null
     else
       echo "file is empty"
     fi
@@ -2540,9 +2895,9 @@ fnETHTOOL()
   # SUPPLEMENTAL STUFF HERE
   if type -path ethtool >/dev/null 2>&1
   then
-    ip -s link | grep "eth[0-9]" | awk '{ print $2 }' | cut -f1 -d":" | while read -r ETH
+    ifconfig | grep "flags=" | grep -v "lo:" | cut -f1 -d":" | while read -r ETH
     do
-      fnBANNER " ETHTOOL (***)"
+      fnBANNER " ETHTOOL ${ETH} (***)"
       echo "Found ${ETH}..."
       echo
       ${SUDO} ethtool -i "${ETH}"
@@ -2564,7 +2919,7 @@ fnIFCONFIG()
 fnARP_CACHE()
 {
   fnBANNER " IP NEIGHBORS (ARP CACHE)"
-  ip neigh | grep -v FAILED
+  ip neigh
   echo
 }
 
@@ -2574,7 +2929,7 @@ fnSUPPLICANT()
   if [ -f /etc/wpa_supplicant/wpa_supplicant.conf ]
   then
     fnBANNER " WPA_SUPPLICANT FILE (Passwords will not be displayed)"
-    ${SUDO} cat /etc/wpa_supplicant/wpa_supplicant.conf 2>/dev/null | grep -v ^$ \
+    ${SUDO} cat /etc/wpa_supplicant/wpa_supplicant.conf 2>/dev/null | grep -v "^$" \
       | sed 's/psk=.*/psk=**PASSWORD_HIDDEN**/' \
       | sed 's/wep_key0=.*/wep_key0=**PASSWORD_HIDDEN**/' \
       | sed 's/password=.*/password=**PASSWORD_HIDDEN**/' \
@@ -2597,7 +2952,7 @@ fnIWCONFIG()
 fnWIFI_AP()
 {
   fnBANNER " VISIBLE WIFI ACCESS POINTS"
-  iwlist scan 2>/dev/null | grep -v ^$ | grep -v "Unknown:"
+  iwlist scan 2>/dev/null | grep -v "^$" | grep -v "Unknown:"
   echo
 }
 
@@ -2619,14 +2974,14 @@ fnNMAP()
   if type -path nmap >/dev/null 2>&1
   then
     # IPV4
-    ifconfig | grep "inet " | awk '{ print $2 }' | while read -r MY_IP
+    ifconfig | grep "inet " | awk '{ print $2 }' | sort -u -n -t. -k 1,1  -k 2,2  -k 3,3  -k 4,4 | while read -r MY_IP
     do
       fnBANNER " SCANNING FOR SERVICES ON IPV4: ${MY_IP} (***)"
       nmap -Pn -sV -T4 -p 1-65535 --version-light "${MY_IP}" | grep "^PORT\|^[1-9][0-9]"
       echo
     done
     # IPV6
-    ifconfig | grep "inet6 " | grep -v "inet6 ....::" | awk '{ print $2 }' | while read -r MY_IP
+    ifconfig | grep "inet6 " | grep -v "inet6 ....::" | awk '{ print $2 }' | sort | while read -r MY_IP
     do
       fnBANNER " SCANNING FOR SERVICES ON IPV6: ${MY_IP} (***)"
       nmap -6 -Pn -sV -T4 -p 1-65535 --version-light "${MY_IP}" | grep "^PORT\|^[1-9][0-9]"
@@ -2673,7 +3028,7 @@ fnRPC_NFS()
       echo
       if type -path nfsiostat >/dev/null 2>&1 && type -path grep >/dev/null 2>&1
       then
-        fnBANNER " NFSIOSTAT (***)" | grep -v ^$
+        fnBANNER " NFSIOSTAT (***)" | grep -v "^$"
         nfsiostat
       else
         echo "Missing nfsiostat, skipping nfsiostat display" >&2
@@ -2731,7 +3086,292 @@ fnERRNO()
   fi
 }
 
-##---------------
+#---------------
+fnCRON()
+{
+  fnBANNER " JOB SCHEDULING - CRON"
+  echo " Contents of /etc/crontab:"
+  if [ -f /etc/crontab ]
+  then
+    cat /etc/crontab
+  else
+    echo " File /etc/crontab is missing!"
+  fi
+  echo
+  echo " ----------------------------------------------------"
+  echo " cron files in /etc/cron.d ..."
+  ls /etc/cron.d
+  echo
+  echo " ----------------------------------------------------"
+  echo " cron files in /etc/cron.hourly ..."
+  ls /etc/cron.hourly
+  echo
+  echo " ----------------------------------------------------"
+  echo " cron files in /etc/cron.daily ..."
+  ls /etc/cron.daily
+  echo
+  echo " ----------------------------------------------------"
+  echo " cron files in /etc/cron.weekly ..."
+  ls /etc/cron.weekly
+  echo
+  echo " ----------------------------------------------------"
+  echo " cron files in /etc/cron.monthly ..."
+  ls /etc/cron.monthly
+  echo
+  echo " ----------------------------------------------------"
+  echo " cron files in /var/spool/cron/crontabs:"
+  ${SUDO} ls /var/spool/cron/crontabs
+  echo
+  echo " ----------------------------------------------------"
+  echo " Contents of /etc/cron.allow:"
+  if [ -f /etc/cron.allow ]
+  then
+    cat /etc/cron.allow
+  else
+    echo " File /etc/cron.allow not configured"
+  fi
+  echo
+  echo " ----------------------------------------------------"
+  echo " Contents of /etc/cron.deny:"
+  if [ -f /etc/cron.deny ]
+  then
+    cat /etc/cron.deny
+  else
+    echo " File /etc/cron.deny not configured"
+  fi
+  echo
+  echo " ----------------------------------------------------"
+  systemctl status cron.service
+  echo
+}
+
+#---------------
+fnAT()
+{
+  # SUPPLEMENTAL STUFF HERE
+  if type -path at >/dev/null 2>&1
+  then
+    fnBANNER " JOB SCHEDULING - AT (***)"
+    if [ -f /etc/at.allow ]
+    then
+      echo " Contents of /etc/at.allow:"
+      ${SUDO} cat /etc/at.allow 2>/dev/null
+      echo
+    else
+      echo " File /etc/at.allow not configured"
+      echo
+    fi
+    echo " ----------------------------------------------------"
+    if [ -f /etc/at.deny ]
+    then
+      echo " Contents of /etc/at.deny:"
+      ${SUDO} cat /etc/at.deny 2>/dev/null
+      echo
+    else
+      echo " File /etc/at.deny not present"
+      echo
+    fi
+    echo " ----------------------------------------------------"
+    echo " at files in /var/spool/cron/atjobs:"
+    ${SUDO} ls /var/spool/cron/atjobs
+    echo
+    echo " ----------------------------------------------------"
+    echo " at files in /var/spool/cron/atspool:"
+    ${SUDO} ls /var/spool/cron/atspool
+    echo
+    echo " ----------------------------------------------------"
+    echo " Checking atq for any jobs..."
+    if [ -n "$(${SUDO} atq)" ]
+    then
+      ${SUDO} atq
+    else
+      echo " No jobs found"
+    fi
+    echo
+    echo " ----------------------------------------------------"
+    systemctl status atd.service
+    echo
+  fi
+}
+
+#---------------
+fnCHKROOTKIT()
+{
+  # SUPPLEMENTAL STUFF HERE
+  if type -path chkrootkit >/dev/null 2>&1
+  then
+    fnBANNER " CHECKING FOR ROOTKITS (***)"
+    ${SUDO} chkrootkit -e -n 2>/dev/null
+    echo
+  fi
+}
+
+#---------------
+fnUSERCHECK()
+{
+  fnBANNER " REGULAR (NON-SYSTEM) USER ACCOUNTS"
+  sort -u -n -t: -k 3.1 /etc/passwd | while read -r PW_REC
+  do
+    PW_USR="$(echo "${PW_REC}" | cut -f1 -d":")"
+    PW_NUM="$(echo "${PW_REC}" | cut -f3 -d":")"
+    PW_GRP="$(echo "${PW_REC}" | cut -f4 -d":")"
+    GRP_GRP="$(grep ":${PW_GRP}:" /etc/group | cut -f1 -d":")"
+    if [ "${PW_NUM}" -ge 1000 ] && [ "${PW_USR}" != "nobody" ]
+    then
+      echo "--------------------"
+      echo -n "USER NAME ................... "
+      echo "${PW_USR}"
+
+      echo -n "NUMERIC UID ................. "
+      echo "${PW_REC}" | cut -f3 -d":"
+
+      echo -n "USER'S PRIMARY GROUP ........ "
+      grep ":${PW_GRP}:" /etc/group | cut -f1 -d":"
+
+      echo -n "HOME DIRECTORY .............. "
+      HOMEDIR=$(grep "^${PW_USR}:" /etc/passwd | cut -f6 -d":")
+      if [ -d "${HOMEDIR}" ]
+      then
+        fnMOG 700 "${PW_USR}" "${GRP_GRP}" "${HOMEDIR}"
+      else
+        echo -n "${HOMEDIR}"
+        echo " <-- *** WARNING: SPECIFIED DIRECTORY DOES NOT EXIST ***"
+      fi
+
+      echo -n "THE USER'S SHELL ............ "
+      grep "^${PW_USR}:" /etc/passwd | cut -f7 -d":"
+
+      echo -n "MEMBER OF GROUPS ............ "
+      if [ -n "$(grep "^${PW_USR}:\|:${PW_USR}$\|:${PW_USR},\|,{PW_USR},\|,${PW_USR}$" /etc/group | cut -f1 -d":" | head -1)" ]
+      then
+        grep "^${PW_USR}:\|:${PW_USR}$\|:${PW_USR},\|,{PW_USR},\|,${PW_USR}$" /etc/group | cut -f1 -d":" | sort | while read -r GRP_REC
+        do
+          echo -n "${GRP_REC} "
+        done
+        echo
+      else
+        echo "Account is not a member of any groups"
+      fi
+
+      echo -n "PASSWORD STATUS ............. "
+      case "$(${SUDO} passwd --status "${PW_USR}" | awk '{ print $2 }')" in
+        NP)
+          echo "<-- *** NO PASSWORD (THIS IS BAD) ***"
+          ;;
+        L)
+          echo "<-- *** ADMINISTRATIVELY LOCKED ***"
+          ;;
+        P)
+          echo "VALID - OK"
+          ;;
+      esac
+
+      echo -n "PASSWORD LAST CHANGED ....... "
+      ${SUDO} chage -l "${PW_USR}" | cut -f2 -d":" | sed 's/^ //' | head -1
+      echo -n "PASSWORD EXPIRES ............ "
+      ${SUDO} chage -l "${PW_USR}" | cut -f2 -d":" | sed 's/^ //' | head -2 | tail -1
+      echo -n "PASSWORD INACTIVE ........... "
+      ${SUDO} chage -l "${PW_USR}" | cut -f2 -d":" | sed 's/^ //' | head -3 | tail -1
+      echo -n "ACCOUNT EXPIRES ............. "
+      ${SUDO} chage -l "${PW_USR}" | cut -f2 -d":" | sed 's/^ //' | head -4 | tail -1
+      echo -n "MIN PASSWORD LIFE (DAYS) .... "
+      ${SUDO} chage -l "${PW_USR}" | cut -f2 -d":" | sed 's/^ //' | head -5 | tail -1
+      echo -n "MAX PASSWORD LIFE (DAYS) .... "
+      ${SUDO} chage -l "${PW_USR}" | cut -f2 -d":" | sed 's/^ //' | head -6 | tail -1
+      echo -n "WARN BEFORE CHANGE (DAYS) ... "
+      ${SUDO} chage -l "${PW_USR}" | cut -f2 -d":" | sed 's/^ //' | head -7 | tail -1
+
+      if [ -d "${HOMEDIR}/.ssh" ]
+      then
+        echo "USER'S .ssh SETUP:"
+        fnMOG 700 "${PW_USR}" "${GRP_GRP}" "${HOMEDIR}/.ssh"
+        if [ -f "${HOMEDIR}/.ssh/authorized_keys" ]
+        then
+          fnMOG 600 "${PW_USR}" "${GRP_GRP}" "${HOMEDIR}/.ssh/authorized_keys"
+        fi
+        if [ -f "${HOMEDIR}/.ssh/known_hosts" ]
+        then
+          fnMOG 600 "${PW_USR}" "${GRP_GRP}" "${HOMEDIR}/.ssh/known_hosts"
+        fi
+        if [ -f "${HOMEDIR}/.ssh/config" ]
+        then
+          fnMOG 600 "${PW_USR}" "${GRP_GRP}" "${HOMEDIR}/.ssh/config"
+        fi
+        if [ -f "${HOMEDIR}/.ssh/id_dsa" ]
+        then
+          fnMOG 600 "${PW_USR}" "${GRP_GRP}" "${HOMEDIR}/.ssh/id_dsa"
+        fi
+        if [ -f "${HOMEDIR}/.ssh/id_dsa.pub" ]
+        then
+          fnMOG 644 "${PW_USR}" "${GRP_GRP}" "${HOMEDIR}/.ssh/id_dsa.pub"
+        fi
+        if [ -f "${HOMEDIR}/.ssh/id_rsa" ]
+        then
+          fnMOG 600 "${PW_USR}" "${GRP_GRP}" "${HOMEDIR}/.ssh/id_rsa"
+        fi
+        if [ -f "${HOMEDIR}/.ssh/id_rsa.pub" ]
+        then
+          fnMOG 644 "${PW_USR}" "${GRP_GRP}" "${HOMEDIR}/.ssh/id_rsa.pub"
+        fi
+      fi
+    echo
+    fi
+  done
+}
+
+#---------------
+fnLAST_LOGINS()
+{
+  fnBANNER " LAST LOGINS"
+  last
+  echo
+  fnSUB_BANNER " LOGIN FAILURES"
+  ${SUDO} lastb
+  echo
+}
+
+#---------------
+fnW()
+{
+  fnBANNER " CURRENTLY LOGGED ON"
+  w
+  echo
+}
+
+#---------------
+fnSUDOERS()
+{
+  fnBANNER " SUDOERS SYNTAX CHECK"
+  ${SUDO} visudo --check --strict
+  echo
+}
+
+#---------------
+fnCHECK_PERMISSIONS()
+{
+  fnBANNER " CHECKING BASIC CRITICAL DIRECTORY PERMISSIONS"
+  fnMOG 755 root root /
+  fnMOG 755 root root /bin
+  fnMOG 755 root root /boot
+  fnMOG 755 root root /dev
+  fnMOG 755 root root /etc
+  fnMOG 755 root root /home
+  fnMOG 755 root root /lib
+  fnMOG 755 root root /media
+  fnMOG 755 root root /mnt
+  fnMOG 755 root root /opt
+  fnMOG 555 root root /proc
+  fnMOG 700 root root /root
+  fnMOG 755 root root /run
+  fnMOG 755 root root /sbin
+  fnMOG 755 root root /srv
+  fnMOG 555 root root /sys
+  fnMOG 1777 root root /tmp
+  fnMOG 755 root root /usr
+  fnMOG 755 root root /var
+}
+
+#---------------
 fnSYSBENCH_CPU()
 {
   # SUPPLEMENTAL STUFF HERE
@@ -2761,13 +3401,44 @@ fnSYSBENCH_MEM()
 fnSYSBENCH_IO()
 {
   # SUPPLEMENTAL STUFF HERE
+  # This only gets called if the touchfile "${HOME}/.system_info_io" exists
   if type -path sysbench >/dev/null 2>&1
   then
     fnBANNER " SYSBENCH FILEIO BENCHMARK (***)"
-    sysbench --test=fileio --file-total-size=2G prepare
-    sysbench --test=fileio --file-total-size=2G --file-test-mode=rndrw --init-rng=on --max-time=300 --max-requests=0 run
-    sysbench --test=fileio --file-total-size=2G cleanup
-    echo
+    if [ -e "${HOME}/.system_info_io" ]
+    then
+      echo -e " Touchfile \"${HOME}/.system_info_io\" detected."
+      echo " Executing the sysbench File I/O benchmark."
+      echo "=================================================="
+      echo
+      sysbench --test=fileio --file-total-size=2G prepare
+      sysbench --test=fileio --file-total-size=2G --file-test-mode=rndrw --init-rng=on --max-time=300 --max-requests=0 run
+      sysbench --test=fileio --file-total-size=2G cleanup
+      echo
+      echo "=================================================="
+      echo " To prevent system_info from running this test,"
+      echo " delete the touchfile with the following command:"
+      echo "   rm ${HOME}/.system_info_io"
+      echo
+    else
+      echo -e " Touchfile \"${HOME}/.system_info_io\" not detected."
+      echo " Skipping sysbench File I/O benchmark."
+      echo
+      echo " To have system_info run this test, create the"
+      echo " touchfile with the following command:"
+      echo "   touch ${HOME}/.system_info_io"
+      echo
+      echo " To prevent system_info from running this test,"
+      echo " delete the touchfile with the following command:"
+      echo "   rm ${HOME}/.system_info_io"
+      echo
+      echo " Note that enabling this test creates, writes, reads"
+      echo " and deletes 128 test files, 16Mb each (2GB total)."
+      echo " Most people will NOT want to do that much writing to"
+      echo " their wear-sensitive media (mainly SD cards and USB-"
+      echo " attached SSD drives), on a regular basis."
+      echo
+    fi
   fi
 }
 
@@ -2784,7 +3455,7 @@ fnMODULES()
 fnMOD_DETAILS()
 {
   fnBANNER " MODULE DETAILS"
-  lsmod | awk '{ print $1 }' | grep -v ^Module | sort | while read -r MODULE
+  lsmod | awk '{ print $1 }' | grep -v "^Module" | sort | while read -r MODULE
   do
     echo "===================="
     modinfo "${MODULE}"
@@ -2835,6 +3506,14 @@ fnUPGRADABLES()
 }
 
 #---------------
+fnDEPENDENCY_CHECK()
+{
+  fnBANNER " CHECK FOR BROKEN DEPENDENCIES"
+  ${SUDO} apt-get check
+  echo
+}
+
+#---------------
 fnON_HOLD()
 {
   # Packages can be placed "on hold" to prevent upgrading a package
@@ -2881,13 +3560,20 @@ fnPKG_DETAILS()
 fnDOCKER()
 {
   # SUPPLEMENTAL STUFF HERE
-  if [ -n "$(pgrep dockerd)" ]
+  if [ -n "$(pgrep dockerd)" ] || [ -n "$(pgrep docker)" ]
   then
     fnBANNER " DOCKER (***)"
-    docker version 2>/dev/null
+    ${SUDO} docker version 2>/dev/null
     echo
     echo "-------------------------------"
-    docker info 2>/dev/null
+    ${SUDO} docker info 2>/dev/null
+
+    if [ -f /etc/containerd/config.toml ]
+    then
+      fnSUB_BANNER " Contents of /etc/containerd/config.toml"
+      grep -v "^#\|^$" < /etc/containerd/config.toml
+      echo
+    fi
 
     systemctl | grep docker | awk '{ print $1 }' | while read -r SERVICE
     do
@@ -2897,19 +3583,20 @@ fnDOCKER()
     echo
 
     fnSUB_BANNER " ALL CONTAINERS" | grep -v "^$"
-    docker ps -a 2>/dev/null
+    ${SUDO} docker ps -a 2>/dev/null
     echo
     fnSUB_BANNER " RUNNING CONTAINERS" | grep -v "^$"
-    docker ps 2>/dev/null
+    ${SUDO} docker ps 2>/dev/null
     echo
     fnSUB_BANNER " ALL IMAGES"
-    docker image ls 2>/dev/null
+    ${SUDO} docker images 2>/dev/null
     echo
 
-    if [ -n "$(docker image ls 2>/dev/null | awk '{ print $1 }' | grep "^hello-world")" ]
+    if [ -n "$(docker images 2>/dev/null | awk '{ print $1 }' | grep "^hello-world")" ]
     then
       fnSUB_BANNER " Docker \"Hello World\"" | grep -v "^$"
-      sudo docker run --rm -it hello-world 2>/dev/null | sed 's/\r//'
+      ${SUDO} docker run --rm -it hello-world 2>/dev/null | sed 's/\r//'
+      echo
     fi
   fi
 }
@@ -2923,14 +3610,17 @@ fnNSPAWN()
     fnBANNER " SYSTEMD-NSPAWN (***)"
     echo "NSPAWN-RELATED PACKAGES INSTALLED:"
     echo
-    dpkg -l | grep nspawn | awk '{ print $2 }' | grep -v systemd-container | while read -r NSPAWNPKG
+    dpkg -l | grep -i nspawn | awk '{ print $2 }' | while read -r NSPAWNPKG
     do
-      apt info "${NSPAWNPKG}" 2>/dev/null
+      apt show "${NSPAWNPKG}" 2>/dev/null
       echo "-------------------------------"
       echo
     done
     echo "CONTAINERS FOUND IN: /var/lib/machines"
     ${SUDO} find /var/lib/machines/ -maxdepth 1 -mindepth 1 -type d -exec basename {} \;
+    echo
+    echo "-------------------------------"
+    machinectl list
     echo
     echo "-------------------------------"
     if type -path ds64-shell >/dev/null 2>&1
@@ -2951,20 +3641,19 @@ fnNSPAWN()
 }
 
 ##################################################
-# Defining all of the above as functions makes rearranging the order in
-# which they are executed easy.  Grouping related functions together
-# is also much easier, and beats moving whole blocks of code around.
-# Each "group" below, relates to a menu selection on the main menu, with
-# the first group (fnGROUP_INITIALIZE) always executed before the menu
-# is even displayed.
+# THE INDIVIDUAL FUNCTIONS DEFINED ABOVE NOW GET GROUPED TOGETHER
+# BY MENU SELECTION.
+#
+# Defining all of the above as descrete functions makes it easy to now
+# group related functions together by menu selection.  It beats
+# moving whole blocks of code around.
 
 #----------------------------------- INITIALIZATION - RUN BEFORE MENU
 fnGROUP_INITIALIZE()
 {
-  fnTITLE
+  fnSUDO
   fnPRELIM
   fnRING_BUF
-  fnSUDO
   fnCHECK_VIRT
   fnCHECK_CHROOT
   fnDECODE_REV
@@ -2985,6 +3674,7 @@ fnGROUP_HARDWARE()
   fnMODEL
   fnDIAGRAM
   fnCPU
+  fnSENSORS
   fnHOW_BOOT
 }
 
@@ -2996,6 +3686,7 @@ fnGROUP_PERFORMANCE()
   echo '__)|__\__ | |\__/| \|   /__     PERFORMANCE'
   echo
   fnPROCSPEED
+  fnOVERCLOCK
   fnRING_OSCILLATOR
   fnCLOCKFREQ
   fnVOLTS
@@ -3006,11 +3697,7 @@ fnGROUP_PERFORMANCE()
   fnIOSTAT
   fnSYSBENCH_CPU
   fnSYSBENCH_MEM
-  # Some people may not like the amount of writing this next function does
-  # to their SD card, so I include this test, but leave it commented out.
-  # It creates, writes, reads and deletes 128 files, 16Mb each (2GB total).
-  # If you want to run this next benchmark, simply uncomment the next line.
-  # fnSYSBENCH_IO
+  fnSYSBENCH_IO
 }
 
 #----------------------------------- O/S Config
@@ -3021,14 +3708,23 @@ fnGROUP_OS_CONFIG()
   echo '__)|__\__ | |\__/| \|   __)     OS CONFIG'
   echo
   fnOS
-  fnLOCAL
+  fnLOCALE
   fnCMDLINE
   fnCONFIGTXT
   fnDTOVERLAYS
   fnDTPARAMS
+  fnSYSCTL
   fnLEDS
   fnULIMIT_CORE
   fnERRNO
+  fnCRON
+  fnAT
+  fnCHKROOTKIT
+  fnUSERCHECK
+  fnLAST_LOGINS
+  fnW
+  fnSUDOERS
+  fnCHECK_PERMISSIONS
 }
 
 #----------------------------------- Memory
@@ -3054,6 +3750,7 @@ fnGROUP_LOGGING()
   fnDMESG
   fnJOURNAL
   fnRSYSLOG
+  fnLOGROTATE
 }
 
 #----------------------------------- Services
@@ -3078,7 +3775,7 @@ fnGROUP_HW_BUSSES()
   echo '(_ |_ /   | |/  \|\ |     /     Menu Option 7'
   echo '__)|__\__ | |\__/| \|    /      HARDWARE BUSSES'
   echo
-  fnW1
+  fn1W
   fnSPI
   fnI2S
   fnI2C
@@ -3127,11 +3824,14 @@ fnGROUP_FS_STORAGE()
   fnLSHW_STORAGE
   fnHDPARM
   fnSMART
+  fnQUIRKS
   fnTRIM
   fnBLKID
   fnRAID
   fnLVM
   fnQUOTAS
+  fnOVERLAYFS
+  fnCLAM
 }
 
 #----------------------------------- Audio & Video
@@ -3217,18 +3917,22 @@ fnGROUP_MODS_PKGS()
 
   fnSHOW_REPOS
   fnUPGRADABLES
+  fnDEPENDENCY_CHECK
   fnON_HOLD
   fnPACKAGES
   # This next function will likely never see the light of day.  It generates
   # information about every installed package on a system.  You're better
-  # off running "apt show" against a package of interest only, than having
-  # this script loop through every package.  (You could have thousands of
-  # packages installed, and this would loop through every one of them!)
+  # off running "apt show" against a single package of interest only, than
+  # having this script loop through every package.  (You could have thousands
+  # of packages installed, and this would loop through every one of them!)
   # fnPKG_DETAILS
 }
 
+#---------------
 fnEND_OF_REPORT()
 {
+  echo
+  echo "==============================================================================="
   echo ' __     __    __  __   __  __ __  __  __ ___ '
   echo '|_ |\ ||  \  /  \|_   |__)|_ |__)/  \|__) |  '
   echo '|__| \||__/  \__/|    | \ |__|   \__/| \  |  '
@@ -3236,41 +3940,11 @@ fnEND_OF_REPORT()
 }
 
 ##################################################
-# EVERYTHING BELOW THIS POINT DEALS WITH THE MENU
-
-trap fnABORT 1 2 3 6 15
-declare -a CHOICES
-declare -a OPTIONS
-RCFILE="${HOME}/.system_inforc"
-clear
-
-# Run before menu
-fnGROUP_INITIALIZE
-echo -n "PRESS ENTER FOR MENU... "
-read -r FOO
-
-#Menu OPTIONS
-OPTIONS[0]="Pi Hardware"
-OPTIONS[1]="Performance"
-OPTIONS[2]="O/S Config"
-OPTIONS[3]="Memory"
-OPTIONS[4]="Logging"
-OPTIONS[5]="Services"
-OPTIONS[6]="Hardware Busses"
-OPTIONS[7]="Serial & Bluetooth"
-OPTIONS[8]="USB & Other Devices"
-OPTIONS[9]="Filesystems & Storage"
-OPTIONS[10]="Audio & Video"
-OPTIONS[11]="Networking"
-OPTIONS[12]="Network Filesystems"
-OPTIONS[13]="Containers & Virtualization"
-OPTIONS[14]="Modules and Packages"
-OPTIONS[15]="Run All Of The Above"
-
-# Actions to take based on selection
+# HERE, WE ACTUALLY CALL THE GROUPS ABOVE, WHEN THE
+# REPORT IS RUN, DEPENDING ON YOUR MENU SELECTIONS
+#---------------
 fnACTIONS()
 {
-  fnTITLE
   if [[ ${CHOICES[15]} ]]
   then
     fnGROUP_HARDWARE
@@ -3353,92 +4027,123 @@ fnACTIONS()
   fi
 }
 
+##################################################
+# A FEW REMAINING SUPPORTING FUNCTIONS DEALING
+# WITH THE REPORT, THE SAVING/RECALLING OF MENU
+# SELECTIONS, ETC.
+#---------------
 fnREPORT_ACTIONS()
 {
   echo "The following Menu Options were selected, to generate this report:"
+  echo
   if [[ ${CHOICES[15]} ]]
   then
-    echo " Option 16: Run All Sections"
+    echo "  Option 16: Run All Sections - (Option 16 overrides any/all other selections)"
     echo
     return
   fi
   if [[ ${CHOICES[0]} ]]
   then
-    echo " Option  1: Pi Hardware"
+    echo "  Option  1: Pi Hardware"
+    CHOICE_MADE="Y"
   fi
   if [[ ${CHOICES[1]} ]]
   then
-    echo " Option  2: Performance"
+    echo "  Option  2: Performance"
+    CHOICE_MADE="${CHOICE_MADE}Y"
   fi
   if [[ ${CHOICES[2]} ]]
   then
-    echo " Option  3: O/S Config"
+    echo "  Option  3: O/S Config"
+    CHOICE_MADE="${CHOICE_MADE}Y"
   fi
   if [[ ${CHOICES[3]} ]]
   then
-    echo " Option  4: Memory"
+    echo "  Option  4: Memory"
+    CHOICE_MADE="${CHOICE_MADE}Y"
   fi
   if [[ ${CHOICES[4]} ]]
   then
-    echo " Option  5: Logging"
+    echo "  Option  5: Logging"
+    CHOICE_MADE="${CHOICE_MADE}Y"
   fi
   if [[ ${CHOICES[5]} ]]
   then
-    echo " Option  6: Services"
+    echo "  Option  6: Services"
+    CHOICE_MADE="${CHOICE_MADE}Y"
   fi
   if [[ ${CHOICES[6]} ]]
   then
-    echo " Option  7: Hardware Busses"
+    echo "  Option  7: Hardware Busses"
+    CHOICE_MADE="${CHOICE_MADE}Y"
   fi
   if [[ ${CHOICES[7]} ]]
   then
-    echo " Option  8: Serial & Bluetooth"
+    echo "  Option  8: Serial & Bluetooth"
+    CHOICE_MADE="${CHOICE_MADE}Y"
   fi
   if [[ ${CHOICES[8]} ]]
   then
-    echo " Option  9: USB & Other Devices"
+    echo "  Option  9: USB & Other Devices"
+    CHOICE_MADE="${CHOICE_MADE}Y"
   fi
   if [[ ${CHOICES[9]} ]]
   then
-    echo " Option 10: Filesystems & Storage"
+    echo "  Option 10: Filesystems & Storage"
+    CHOICE_MADE="${CHOICE_MADE}Y"
   fi
   if [[ ${CHOICES[10]} ]]
   then
-    echo " Option 11: Audio & Video"
+    echo "  Option 11: Audio & Video"
+    CHOICE_MADE="${CHOICE_MADE}Y"
   fi
   if [[ ${CHOICES[11]} ]]
   then
-    echo " Option 12: Networking"
+    echo "  Option 12: Networking"
+    CHOICE_MADE="${CHOICE_MADE}Y"
   fi
   if [[ ${CHOICES[12]} ]]
   then
-    echo " Option 13: Network Filesystems"
+    echo "  Option 13: Network Filesystems"
+    CHOICE_MADE="${CHOICE_MADE}Y"
   fi
   if [[ ${CHOICES[13]} ]]
   then
-    echo " Option 14: Containers & Virtualization"
+    echo "  Option 14: Containers & Virtualization"
+    CHOICE_MADE="${CHOICE_MADE}Y"
   fi
   if [[ ${CHOICES[14]} ]]
   then
-    echo " Option 15: Modules and Packages"
+    echo "  Option 15: Modules and Packages"
+    CHOICE_MADE="${CHOICE_MADE}Y"
+  fi
+  if [ "$(echo "${CHOICE_MADE}" | grep "Y")" = "" ]
+  then
+    echo "  No Menu Options were selected"
   fi
   echo
 }
 
+#---------------
 fnREAD_RCFILE()
 {
+  # NOTE:  Because the array is 0-15, and the menu is presented as
+  # options 1-16, the keys in the rc file are 1 lower than the menu
+  # numbers they represent.  For example, menu option 1 is stored as
+  # a key of 0, option 2 is stored as a key of 1, and so on.
+
   # RCFILE format is:
-  #   menu option number (1-15), a colon (:), and a boolean (0 or 1)
+  #   menu option number (minus 1), a colon (:), and a boolean (0 or 1)
   #   0=not selected
   #   1=selected
   #
   #   example...
-  #   1:1
+  #   0:1
+  #   1:0
   #   2:0
   #   3:1
-  #   4:1
   #   ...
-  #   16:0
+  #   15:0
   #
   if [ -f "${RCFILE}" ]
   then
@@ -3447,12 +4152,14 @@ fnREAD_RCFILE()
       BOOLEAN="$(grep "^${NUM}:" "${RCFILE}" 2>/dev/null | cut -f2 -d":")"
       if [ "${BOOLEAN}" = "1" ]
       then
-        CHOICES[NUM]=+
+#       CHOICES[NUM]="+"
+        CHOICES[NUM]="${REV}+${SGR0}"
       fi
     done
   fi
 }
 
+#---------------
 fnWRITE_RCFILE()
 {
   for NUM in "${!OPTIONS[@]}"
@@ -3466,50 +4173,103 @@ fnWRITE_RCFILE()
   done
 }
 
+#---------------
 fnREPORT_RCFILE()
 {
   echo "These menu selections have been saved in the file:"
   echo "  ${RCFILE}"
   echo
-  echo "They will be auto-selected the next time this script is run."
+  echo "They will be auto-selected next time this script is run by user \"$(whoami)\"."
   echo
 }
 
-ERROR=" "
-
+#---------------
 # Menu function
 fnMENU()
 {
   echo "RASPBERRY PI SYSTEM INFORMATION REPORT v${MY_VERSION} - MAIN MENU"
   echo
-  echo "Menu Options"
+  echo "MENU OPTIONS"
 
   for NUM in "${!OPTIONS[@]}"
   do
-    echo "[""${CHOICES[NUM]:- }""]" $(( NUM+1 ))") ${OPTIONS[NUM]}"
+    if [ "${NUM}" -lt 9 ]
+    then
+      echo "[""${CHOICES[NUM]:- }""] " $(( NUM+1 ))") ${OPTIONS[NUM]}"
+    else
+      echo "[""${CHOICES[NUM]:- }""]" $(( NUM+1 ))") ${OPTIONS[NUM]}"
+    fi
   done
   echo "${ERROR}"
+  echo "Type a number and press [ENTER] to select.  Again, to deselect."
+  echo "Multiple selections can be made before any tests are executed."
 }
 
+##################################################
+# MAINLINE
+##################################################
+
+trap fnABORT 1 2 3 6 15
+declare -a CHOICES
+declare -a OPTIONS
+RCFILE="${HOME}/.system_inforc"
+ERROR=" "
+clear 2>/dev/null
+
+# Run before menu
+fnTITLE
+fnGROUP_INITIALIZE
+echo -n "PRESS ENTER FOR MENU... "
+read -r FOO
+echo
+
+# The array of menu OPTIONS is defined
+OPTIONS[0]="Pi Hardware"
+OPTIONS[1]="Performance"
+OPTIONS[2]="O/S Config"
+OPTIONS[3]="Memory"
+OPTIONS[4]="Logging"
+OPTIONS[5]="Services"
+OPTIONS[6]="Hardware Busses"
+OPTIONS[7]="Serial & Bluetooth"
+OPTIONS[8]="USB & Other Devices"
+OPTIONS[9]="Filesystems & Storage"
+OPTIONS[10]="Audio & Video"
+OPTIONS[11]="Networking"
+OPTIONS[12]="Network Filesystems"
+OPTIONS[13]="Containers & Virtualization"
+OPTIONS[14]="Modules and Packages"
+OPTIONS[15]="Run All Of The Above"
+
+clear 2>/dev/null
+# Force the execution of a specific menu selection when testing.
+# Make sure any parameter is numeric, and between 1 and 16.
+if [[ ${MY_PARAM} = *[[:digit:]]* ]] && [ "${MY_PARAM}" -ge 1 ] && [ "${MY_PARAM}" -le 16 ] 2>/dev/null
+then
+  # Align a 1-16 parameter with 0-15 array elements
+  ((MY_PARAM=MY_PARAM-1))
+  CHOICES[${MY_PARAM}]="${REV}+${SGR0}"
+else
+  fnREAD_RCFILE
+fi
+
 # Main Menu loop
-# note for increasing the number, e..g Option 15; where n1 SELECTION is
+# note for increasing the number, e..g Option 16; where -n1 SELECTION is
 # the crucial part to increase the number of digits, where -n2 SELECTION
-# will accept two digits (e.g. 15), -n3 accepts three (e.g. 153), etc.
-clear
-fnREAD_RCFILE
-while fnMENU && read -r -e -p "Select number (again to uncheck, ENTER when done, Q or Ctrl-C to abort): " -n3 SELECTION && [[ -n "$SELECTION" ]]
+# will accept two digits (e.g. 16), -n3 accepts three (e.g. 153), etc.
+while fnMENU && read -r -e -p "Press [ENTER] by itself when ready.  Use Q [ENTER] or Ctrl-C to quit: " -n3 SELECTION && [[ -n "${SELECTION}" ]]
 do
-  clear
+  clear 2>/dev/null
   if [[ "${SELECTION}" == *[[:digit:]]* && ${SELECTION} -ge 1 && ${SELECTION} -le ${#OPTIONS[@]} ]]
   then
     (( SELECTION-- ))
-    if [[ "${CHOICES[SELECTION]}" == "+" ]]
+    if [[ "${CHOICES[SELECTION]}" == "${REV}+${SGR0}" ]]
     then
       CHOICES[SELECTION]=""
     else
-      CHOICES[SELECTION]="+"
+      CHOICES[SELECTION]="${REV}+${SGR0}"
     fi
-      ERROR=" "
+    ERROR=" "
   else
     if [ "${SELECTION}" = "q" ] || [ "${SELECTION}" = "Q" ]
     then
@@ -3520,22 +4280,28 @@ do
   fi
 done
 
-# Call all the inspections selected by the menu above.
-clear
-fnTITLE
+# Call all the inspections selected.
+clear 2>/dev/null
 STAMP=$(date +%F-%T | sed 's/:/-/g')
 REPORT=~/${HOSTNAME}-system_info-${STAMP}
 SECONDS=0
-fnACTIONS | tee "${REPORT}"
-rm /tmp/.lshw_businfo.${PPID} 2>/dev/null
+> "${REPORT}"
+fnTITLE | tee -a "${REPORT}"
+fnREPORT_ACTIONS | sed 's/\r//' | tee -a "${REPORT}"
+fnACTIONS | tee -a "${REPORT}"
 
 # Closing Screen
 # Everything from here down happens after the inspections are complete.
+rm /tmp/.lshw_businfo.${PPID} 2>/dev/null
 ELAPSED=${SECONDS}
 RUNTIME="$((ELAPSED / 60)) minutes and $((ELAPSED % 60)) seconds."
 fnEND_OF_REPORT | tee -a "${REPORT}"
 fnBANNER " TIME REQUIRED TO GENERATE THIS REPORT:  ${RUNTIME}" | tee -a "${REPORT}"
 fnREPORT_ACTIONS | sed 's/\r//' | tee -a "${REPORT}"
-fnWRITE_RCFILE > "${RCFILE}"
+if [ "${MY_PARAM}" = "" ]
+then
+  fnWRITE_RCFILE > "${RCFILE}"
+fi
 fnREPORT_RCFILE | tee -a "${REPORT}"
 fnBANNER " REPORT SAVED AS:  ${REPORT}" | tee -a "${REPORT}"
+echo "${BELL}"
